@@ -40,3 +40,21 @@ To safely bypass the CRC check without corrupting the `catalog.json` file, we mu
 4.  **Save:** Base64 encode the modified `m_ExtraDataString` byte array and save it back to `catalog.json`.
 
 By following this precise padding technique, the CRC check is disabled for the modified bundle, and the integrity of the catalog's data structure is preserved.
+
+## Binary Catalogs (`catalog.bin`, Addressables 1.21+)
+
+Newer Addressables builds can ship `StreamingAssets/aa/catalog.bin` (see `m_CatalogLocations` in `aa/settings.json`). It is a `BinaryStorageBuffer`, not JSON, so `patch_catalog_crc.py` does not apply.
+
+Each bundle's `AssetBundleRequestOptions` is serialized as a fixed-size record that is written right after the bundle's internal name string (length-prefixed, the AssetBundle object's name without `.bundle`):
+
+```
+uint32 hashId        // offset of the Hash128 object
+uint32 bundleNameId  // offset of the bundle name string
+uint32 crc           // 0 = CRC check disabled
+uint32 bundleSize    // original file size in bytes
+...                  // timeout / retry / flags
+```
+
+`catalog_bin_crc.py` finds that record, accepts it only if `bundleSize` equals the original bundle's file size (so a wrong match is never patched), prints the CRC, and with `--patch` writes `0` into the 4-byte CRC field in place. Every field is fixed width, so no other offsets move.
+
+Check before patching: many games build local bundles with CRC disabled (`crc == 0`), in which case a modified bundle loads as-is. A changed `bundleSize` does not matter for local bundles loaded from disk.
